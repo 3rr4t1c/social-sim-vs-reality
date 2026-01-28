@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# =============================================================================
+# Project-specific ignores
+# =============================================================================
+
+# Data files (too large for git, see README for expected format)
+data/
+
+# Generated outputs
+output/
+
+# macOS
+.DS_Store
+**/.DS_Store

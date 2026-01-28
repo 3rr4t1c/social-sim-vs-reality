@@ -1,0 +1,18 @@
+# Social Media Simulator Validation
+# Dependencies
+
+# Core data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Configuration (optional, for future YAML support)
+# pyyaml>=6.0
+
+# Development (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# mypy>=1.0.0
