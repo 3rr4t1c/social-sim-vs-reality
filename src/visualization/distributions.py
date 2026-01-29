@@ -709,3 +709,346 @@ def plot_cascade_distribution(
     """[DEPRECATED] Cascade metrics have been removed."""
     logger.warning("plot_cascade_distribution is deprecated. Cascade metrics have been removed.")
     return None
+
+
+# =============================================================================
+# POST VS RESHARE PLOTS
+# =============================================================================
+
+def plot_action_type_fractions(
+    real_metrics: Dict[str, Any],
+    sim_metrics: Dict[str, List[Dict[str, Any]]],
+    sim_name: str,
+    output_dir: Path,
+    figure_size: tuple = (8, 6),
+    color_real: str = "#2E3440",
+    color_sim: str = "#0077BB",
+    grid_alpha: float = 0.3,
+    output_format: str = "pdf",
+) -> Optional[Path]:
+    """
+    Plot bar chart comparing post vs reshare fractions between real and simulated data.
+
+    Args:
+        real_metrics: Metrics dictionary for real data
+        sim_metrics: Dictionary mapping simulation names to lists of run metrics
+        sim_name: Name of the simulation to plot
+        output_dir: Directory for output file
+        figure_size: Figure dimensions
+        color_real: Color for real data bars
+        color_sim: Color for simulation bars
+        grid_alpha: Grid line transparency
+        output_format: Output format ("pdf", "png")
+
+    Returns:
+        Path to saved figure, or None if no data
+    """
+    if "post_fraction" not in real_metrics or "reshare_fraction" not in real_metrics:
+        logger.warning("Skipping action type fractions plot: missing fraction metrics")
+        return None
+
+    if sim_name not in sim_metrics or not sim_metrics[sim_name]:
+        logger.warning(f"Skipping action type fractions plot: no data for {sim_name}")
+        return None
+
+    # Get real fractions
+    real_post = real_metrics["post_fraction"]
+    real_reshare = real_metrics["reshare_fraction"]
+
+    # Aggregate simulation fractions (mean across runs)
+    sim_runs = sim_metrics[sim_name]
+    sim_post_values = [r.get("post_fraction", 0) for r in sim_runs if "post_fraction" in r]
+    sim_reshare_values = [r.get("reshare_fraction", 0) for r in sim_runs if "reshare_fraction" in r]
+
+    if not sim_post_values:
+        return None
+
+    sim_post_mean = np.mean(sim_post_values)
+    sim_post_std = np.std(sim_post_values, ddof=1) if len(sim_post_values) > 1 else 0
+    sim_reshare_mean = np.mean(sim_reshare_values)
+    sim_reshare_std = np.std(sim_reshare_values, ddof=1) if len(sim_reshare_values) > 1 else 0
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=figure_size)
+
+    x = np.array([0, 1])  # Two groups: Posts, Reshares
+    width = 0.35
+
+    # Real data bars
+    real_values = [real_post, real_reshare]
+    bars_real = ax.bar(x - width/2, real_values, width, label="Real", color=color_real)
+
+    # Simulation bars with error bars
+    sim_values = [sim_post_mean, sim_reshare_mean]
+    sim_errors = [sim_post_std, sim_reshare_std]
+    bars_sim = ax.bar(x + width/2, sim_values, width, label=f"Simulated (n={len(sim_runs)})",
+                      color=color_sim, yerr=sim_errors, capsize=5)
+
+    # Labels and formatting
+    ax.set_ylabel("Fraction", fontsize=12)
+    ax.set_title(f"Action Type Distribution: Real vs {sim_name.replace('_simulation', '').replace('_', ' ')}",
+                 fontsize=14, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(["Posts", "Reshares"], fontsize=11)
+    ax.legend(loc="upper right", framealpha=0.9)
+    ax.grid(axis="y", alpha=grid_alpha)
+    ax.set_ylim(0, 1)
+
+    # Add value labels on bars
+    for bar, val in zip(bars_real, real_values):
+        ax.annotate(f"{val:.2%}",
+                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    xytext=(0, 3), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=9)
+
+    for bar, val in zip(bars_sim, sim_values):
+        ax.annotate(f"{val:.2%}",
+                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    xytext=(0, 3), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=9)
+
+    plt.tight_layout()
+
+    safe_name = sim_name.replace(" ", "_").lower()
+    output_path = output_dir / f"action_type_fractions_{safe_name}"
+    save_figure(fig, output_path, fmt=output_format)
+    close_figure(fig)
+
+    logger.info(f"Generated: action_type_fractions_{safe_name}.{output_format}")
+    return output_path.with_suffix(f".{output_format}")
+
+
+def plot_post_vs_reshare_scatter(
+    real_metrics: Dict[str, Any],
+    sim_metrics: Dict[str, List[Dict[str, Any]]],
+    sim_name: str,
+    output_dir: Path,
+    figure_size: tuple = (14, 6),
+    color_real: str = "#2E3440",
+    color_sim: str = "#0077BB",
+    grid_alpha: float = 0.3,
+    max_points: int = 5000,
+    output_format: str = "png",
+    point_alpha: float = 0.5,
+    point_size_min: int = 10,
+    point_size_max: int = 200,
+    time_binning: str = "D",
+    clip_percentile: Optional[int] = 99,
+    show_size_legend: bool = True,
+) -> Optional[Path]:
+    """
+    Plot scatter of mean posts vs mean reshares per user per time unit.
+
+    Creates two side-by-side panels: Real data | Simulated data.
+    Each point represents one user. Point size reflects total activity.
+
+    Args:
+        real_metrics: Metrics dictionary for real data
+        sim_metrics: Dictionary mapping simulation names to lists of run metrics
+        sim_name: Name of the simulation to plot
+        output_dir: Directory for output file
+        figure_size: Figure dimensions
+        color_real: Color for real data points
+        color_sim: Color for simulation points
+        grid_alpha: Grid line transparency
+        max_points: Maximum points to display (samples if exceeded)
+        output_format: Output format ("pdf", "png")
+        point_alpha: Point transparency
+        point_size_min: Minimum point size (for least active users)
+        point_size_max: Maximum point size (for most active users)
+        time_binning: Time binning setting for axis labels
+        clip_percentile: Percentile to clip axes at (None = no clipping)
+        show_size_legend: Show legend explaining point sizes
+
+    Returns:
+        Path to saved figure, or None if no data
+    """
+    # Map time_binning to readable labels
+    time_unit_labels = {
+        "D": "day",
+        "W": "week",
+        "H": "hour",
+        "h": "hour",
+        "1D": "day",
+        "1W": "week",
+        "1H": "hour",
+        "1h": "hour",
+    }
+    time_unit = time_unit_labels.get(time_binning, "time unit")
+
+    if "user_post_reshare_means" not in real_metrics:
+        logger.warning("Skipping post vs reshare scatter: missing user_post_reshare_means")
+        return None
+
+    if sim_name not in sim_metrics or not sim_metrics[sim_name]:
+        logger.warning(f"Skipping post vs reshare scatter: no data for {sim_name}")
+        return None
+
+    real_df = real_metrics["user_post_reshare_means"].copy()
+    if real_df.empty:
+        return None
+
+    # Aggregate simulation data across runs (same users, average their means)
+    sim_runs = sim_metrics[sim_name]
+    sim_dfs = [r.get("user_post_reshare_means") for r in sim_runs
+               if r.get("user_post_reshare_means") is not None and not r.get("user_post_reshare_means").empty]
+
+    if not sim_dfs:
+        return None
+
+    # Concatenate all runs and group by user_id to average
+    sim_combined = pd.concat(sim_dfs, ignore_index=True)
+
+    # Check if mean_total_actions column exists
+    agg_cols = {"mean_posts": "mean", "mean_reshares": "mean"}
+    if "mean_total_actions" in sim_combined.columns:
+        agg_cols["mean_total_actions"] = "mean"
+
+    sim_df = sim_combined.groupby("user_id").agg(agg_cols).reset_index()
+
+    # Sample if too many points
+    if len(real_df) > max_points:
+        real_df = real_df.sample(n=max_points, random_state=42)
+    if len(sim_df) > max_points:
+        sim_df = sim_df.sample(n=max_points, random_state=42)
+
+    # Calculate point sizes based on mean_total_actions (using percentile for max)
+    def calculate_sizes(df, size_min, size_max, percentile_max=None):
+        if "mean_total_actions" not in df.columns or df["mean_total_actions"].max() == 0:
+            return np.full(len(df), (size_min + size_max) / 2), 0, 0
+
+        activity = df["mean_total_actions"].values
+        min_act = activity.min()
+        abs_max = activity.max()
+
+        # Use percentile max if provided, otherwise absolute max
+        max_act = percentile_max if percentile_max is not None else abs_max
+
+        if max_act == min_act:
+            return np.full(len(df), (size_min + size_max) / 2), min_act, abs_max
+
+        # Normalize to [0, 1] then scale to [size_min, size_max]
+        # Values above percentile_max get capped to max size
+        normalized = np.clip((activity - min_act) / (max_act - min_act), 0, 1)
+        return size_min + normalized * (size_max - size_min), max_act, abs_max
+
+    # Calculate percentile-based max for mean_total_actions
+    if clip_percentile is not None and "mean_total_actions" in real_df.columns:
+        all_total_actions = np.concatenate([
+            real_df["mean_total_actions"].values,
+            sim_df["mean_total_actions"].values if "mean_total_actions" in sim_df.columns else []
+        ])
+        size_percentile_max = np.percentile(all_total_actions, clip_percentile)
+    else:
+        size_percentile_max = None
+
+    real_sizes, real_size_pct, real_size_abs = calculate_sizes(real_df, point_size_min, point_size_max, size_percentile_max)
+    sim_sizes, sim_size_pct, sim_size_abs = calculate_sizes(sim_df, point_size_min, point_size_max, size_percentile_max)
+
+    # Calculate axis limits
+    if clip_percentile is not None:
+        # Combine all data to compute consistent percentile
+        all_posts = np.concatenate([real_df["mean_posts"].values, sim_df["mean_posts"].values])
+        all_reshares = np.concatenate([real_df["mean_reshares"].values, sim_df["mean_reshares"].values])
+        max_post = np.percentile(all_posts, clip_percentile)
+        max_reshare = np.percentile(all_reshares, clip_percentile)
+        max_val = max(max_post, max_reshare) * 1.05  # small padding
+
+        # Count points outside visible range
+        real_outside = ((real_df["mean_posts"] > max_val) | (real_df["mean_reshares"] > max_val)).sum()
+        sim_outside = ((sim_df["mean_posts"] > max_val) | (sim_df["mean_reshares"] > max_val)).sum()
+    else:
+        max_post = max(real_df["mean_posts"].max(), sim_df["mean_posts"].max()) * 1.1
+        max_reshare = max(real_df["mean_reshares"].max(), sim_df["mean_reshares"].max()) * 1.1
+        max_val = max(max_post, max_reshare)
+        real_outside = 0
+        sim_outside = 0
+
+    # Create plot with two panels
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figure_size)
+
+    # Real data panel
+    ax1.scatter(real_df["mean_posts"], real_df["mean_reshares"],
+                alpha=point_alpha, s=real_sizes, color=color_real, edgecolors="none")
+    ax1.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)  # y=x line without legend
+    ax1.set_xlabel(f"Mean posts per {time_unit}", fontsize=11)
+    ax1.set_ylabel(f"Mean reshares per {time_unit}", fontsize=11)
+    ax1.set_title("Real Data", fontsize=12, fontweight="bold")
+    ax1.set_xlim(0, max_val)
+    ax1.set_ylim(0, max_val)
+    ax1.grid(alpha=grid_alpha)
+    ax1.set_aspect("equal", adjustable="box")
+
+    # Add annotation for points outside visible range
+    if real_outside > 0:
+        ax1.annotate(
+            f"{real_outside} point{'s' if real_outside > 1 else ''} beyond axes",
+            xy=(0.98, 0.02), xycoords="axes fraction",
+            ha="right", va="bottom", fontsize=8,
+            color="gray", style="italic"
+        )
+
+    # Simulation panel
+    display_name = sim_name.replace("_simulation", "").replace("_", " ")
+    ax2.scatter(sim_df["mean_posts"], sim_df["mean_reshares"],
+                alpha=point_alpha, s=sim_sizes, color=color_sim, edgecolors="none")
+    ax2.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)  # y=x line without legend
+    ax2.set_xlabel(f"Mean posts per {time_unit}", fontsize=11)
+    ax2.set_ylabel(f"Mean reshares per {time_unit}", fontsize=11)
+    ax2.set_title(f"Simulated: {display_name} (n={len(sim_runs)} runs)", fontsize=12, fontweight="bold")
+    ax2.set_xlim(0, max_val)
+    ax2.set_ylim(0, max_val)
+    ax2.grid(alpha=grid_alpha)
+    ax2.set_aspect("equal", adjustable="box")
+
+    # Add annotation for points outside visible range
+    if sim_outside > 0:
+        ax2.annotate(
+            f"{sim_outside} point{'s' if sim_outside > 1 else ''} beyond axes",
+            xy=(0.98, 0.02), xycoords="axes fraction",
+            ha="right", va="bottom", fontsize=8,
+            color="gray", style="italic"
+        )
+
+    # Add size legend if requested and mean_total_actions is available
+    if show_size_legend and "mean_total_actions" in real_df.columns:
+        from matplotlib.lines import Line2D
+
+        # Format high label: show percentile value and absolute max if different
+        def format_high_label(pct_val, abs_val):
+            if abs_val > pct_val * 1.01:  # More than 1% difference
+                return f'High ({pct_val:.2f}, max: {abs_val:.2f})'
+            return f'High ({pct_val:.2f})'
+
+        # Real data legend (use color_real for markers)
+        real_min = real_df["mean_total_actions"].min()
+        real_legend_handles = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor=color_real,
+                   markersize=np.sqrt(point_size_min), label=f'Low ({real_min:.2f})'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor=color_real,
+                   markersize=np.sqrt(point_size_max), label=format_high_label(real_size_pct, real_size_abs)),
+        ]
+        ax1.legend(handles=real_legend_handles, loc="upper right", fontsize=8,
+                   title=f"Mean actions/{time_unit}", title_fontsize=8, framealpha=0.9)
+
+        # Simulation data legend (use color_sim for markers)
+        if "mean_total_actions" in sim_df.columns:
+            sim_min = sim_df["mean_total_actions"].min()
+            sim_legend_handles = [
+                Line2D([0], [0], marker='o', color='w', markerfacecolor=color_sim,
+                       markersize=np.sqrt(point_size_min), label=f'Low ({sim_min:.2f})'),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor=color_sim,
+                       markersize=np.sqrt(point_size_max), label=format_high_label(sim_size_pct, sim_size_abs)),
+            ]
+            ax2.legend(handles=sim_legend_handles, loc="upper right", fontsize=8,
+                       title=f"Mean actions/{time_unit}", title_fontsize=8, framealpha=0.9)
+
+    plt.tight_layout()
+
+    safe_name = sim_name.replace(" ", "_").lower()
+    output_path = output_dir / f"post_vs_reshare_scatter_{safe_name}"
+    save_figure(fig, output_path, fmt=output_format)
+    close_figure(fig)
+
+    logger.info(f"Generated: post_vs_reshare_scatter_{safe_name}.{output_format}")
+    return output_path.with_suffix(f".{output_format}")

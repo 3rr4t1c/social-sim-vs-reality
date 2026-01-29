@@ -74,6 +74,11 @@ class Config:
     max_scatter_points: int
     scatter_method: str
     rasterize_scatter: bool
+    scatter_point_size_min: int
+    scatter_point_size_max: int
+    scatter_point_alpha: float
+    scatter_clip_percentile: int  # Clip axes at this percentile (None = no clip)
+    scatter_show_size_legend: bool  # Show legend explaining point sizes
     confidence_alpha: float
     grid_alpha: float
     use_log_scale_user_activity: bool
@@ -168,6 +173,11 @@ def load_config() -> Config:
         max_scatter_points=settings.MAX_SCATTER_POINTS,
         scatter_method=settings.SCATTER_METHOD,
         rasterize_scatter=settings.RASTERIZE_SCATTER,
+        scatter_point_size_min=getattr(settings, "SCATTER_POINT_SIZE_MIN", 10),
+        scatter_point_size_max=getattr(settings, "SCATTER_POINT_SIZE_MAX", 200),
+        scatter_point_alpha=getattr(settings, "SCATTER_POINT_ALPHA", 0.5),
+        scatter_clip_percentile=getattr(settings, "SCATTER_CLIP_PERCENTILE", 99),
+        scatter_show_size_legend=getattr(settings, "SCATTER_SHOW_SIZE_LEGEND", True),
         confidence_alpha=settings.CONFIDENCE_ALPHA,
         grid_alpha=settings.GRID_ALPHA,
         use_log_scale_user_activity=getattr(settings, "USE_LOG_SCALE_USER_ACTIVITY", True),

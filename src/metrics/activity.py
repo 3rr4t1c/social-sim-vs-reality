@@ -456,3 +456,121 @@ def calculate_activity_metrics_indexed(
             df, window_size=window_size, exclude_partial_days=exclude_partial_days
         ),
     }
+
+
+# =============================================================================
+# POST VS RESHARE METRICS
+# =============================================================================
+
+def calculate_action_type_fractions(df: pd.DataFrame) -> Dict[str, float]:
+    """
+    Calculate fraction of posts and reshares.
+
+    Args:
+        df: DataFrame with action_type column
+
+    Returns:
+        Dictionary with post_fraction and reshare_fraction
+    """
+    if df.empty:
+        return {"post_fraction": 0.0, "reshare_fraction": 0.0}
+
+    total = len(df)
+    posts = len(df[df["action_type"] == "post"])
+    reshares = len(df[df["action_type"] == "reshare"])
+
+    return {
+        "post_fraction": posts / total if total > 0 else 0.0,
+        "reshare_fraction": reshares / total if total > 0 else 0.0,
+    }
+
+
+def calculate_user_post_reshare_means(
+    df: pd.DataFrame,
+    window_size: str = "1D",
+) -> pd.DataFrame:
+    """
+    Calculate mean posts and reshares per time unit for each user.
+
+    Uses the temporal activity matrix to properly compute means from the first
+    non-zero action for each user.
+
+    For each user, computes:
+    - mean_posts: average posts per time unit (from first action to end)
+    - mean_reshares: average reshares per time unit (from first action to end)
+    - mean_total_actions: average total actions per time unit (mean_posts + mean_reshares)
+
+    Args:
+        df: DataFrame with timestamp, author_id, action_type columns
+        window_size: Temporal window size (default: daily)
+
+    Returns:
+        DataFrame with columns [user_id, mean_posts, mean_reshares, mean_total_actions]
+    """
+    if df.empty:
+        return pd.DataFrame(columns=["user_id", "mean_posts", "mean_reshares", "mean_total_actions"])
+
+    # Get activity matrix for ALL actions (to determine first action per user)
+    all_activity_matrix = get_temporal_activity_matrix(
+        df, window_size=window_size, include_orphaned=False
+    )
+
+    if all_activity_matrix.empty:
+        return pd.DataFrame(columns=["user_id", "mean_posts", "mean_reshares", "mean_total_actions"])
+
+    # Split by action type and get separate matrices
+    posts_df = df[df["action_type"] == "post"]
+    reshares_df = df[df["action_type"] == "reshare"]
+
+    posts_matrix = get_temporal_activity_matrix(
+        posts_df, window_size=window_size, include_orphaned=False
+    ) if not posts_df.empty else pd.DataFrame()
+
+    reshares_matrix = get_temporal_activity_matrix(
+        reshares_df, window_size=window_size, include_orphaned=False
+    ) if not reshares_df.empty else pd.DataFrame()
+
+    results = []
+
+    for user_id in all_activity_matrix.columns:
+        user_total_activity = all_activity_matrix[user_id]
+
+        # Find first non-zero index (first action)
+        non_zero_mask = user_total_activity > 0
+        if not non_zero_mask.any():
+            continue
+
+        first_action_idx = user_total_activity[non_zero_mask].index[0]
+
+        # Count timesteps from first action to end
+        active_period = user_total_activity.loc[first_action_idx:]
+        n_timesteps = len(active_period)
+
+        if n_timesteps == 0:
+            n_timesteps = 1
+
+        # Get posts in active period
+        if not posts_matrix.empty and user_id in posts_matrix.columns:
+            user_posts = posts_matrix[user_id].loc[first_action_idx:] if first_action_idx in posts_matrix.index else posts_matrix[user_id]
+            total_posts = user_posts.sum()
+        else:
+            total_posts = 0
+
+        # Get reshares in active period
+        if not reshares_matrix.empty and user_id in reshares_matrix.columns:
+            user_reshares = reshares_matrix[user_id].loc[first_action_idx:] if first_action_idx in reshares_matrix.index else reshares_matrix[user_id]
+            total_reshares = user_reshares.sum()
+        else:
+            total_reshares = 0
+
+        mean_posts = total_posts / n_timesteps
+        mean_reshares = total_reshares / n_timesteps
+
+        results.append({
+            "user_id": user_id,
+            "mean_posts": mean_posts,
+            "mean_reshares": mean_reshares,
+            "mean_total_actions": mean_posts + mean_reshares,
+        })
+
+    return pd.DataFrame(results)

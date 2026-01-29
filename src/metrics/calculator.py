@@ -8,7 +8,12 @@ import numpy as np
 import json
 import logging
 
-from .activity import calculate_activity_metrics, calculate_activity_metrics_indexed
+from .activity import (
+    calculate_activity_metrics,
+    calculate_activity_metrics_indexed,
+    calculate_action_type_fractions,
+    calculate_user_post_reshare_means,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +135,11 @@ def calculate_metrics(
         metrics["unique_targets_ratio"] = posts_with_reshares / len(posts)
     else:
         metrics["unique_targets_ratio"] = 0.0
+
+    # Post vs Reshare fractions
+    fractions = calculate_action_type_fractions(df)
+    metrics["post_fraction"] = fractions["post_fraction"]
+    metrics["reshare_fraction"] = fractions["reshare_fraction"]
 
     # =========================================================================
     # TEMPORAL METRICS
@@ -257,6 +267,12 @@ def calculate_metrics(
     metrics["mean_actions_with_zeros_indexed"] = activity_metrics_indexed["mean_actions_with_zeros"]
     metrics["total_actions_per_timestep_indexed"] = activity_metrics_indexed["total_actions_per_timestep"]
     metrics["active_users_per_timestep_indexed"] = activity_metrics_indexed["active_users_per_timestep"]
+
+    # =========================================================================
+    # USER POST VS RESHARE MEANS (for scatter plot)
+    # =========================================================================
+    user_post_reshare = calculate_user_post_reshare_means(df, window_size=time_binning)
+    metrics["user_post_reshare_means"] = user_post_reshare
 
     # =========================================================================
     # EXTRA FEATURES

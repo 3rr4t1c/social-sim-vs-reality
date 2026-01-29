@@ -15,8 +15,8 @@ from pathlib import Path
 # =============================================================================
 DATA_DIR = Path("data")
 OUTPUT_DIR = Path("output")
-REAL_DATA_PATTERN = "*_dataset.csv"        # Pattern for real data files
-SYNTHETIC_DIR_PATTERN = "*_simulation"     # Pattern for simulation folders
+REAL_DATA_PATTERN = "*_dataset.csv"  # Pattern for real data files
+SYNTHETIC_DIR_PATTERN = "*_simulation"  # Pattern for simulation folders
 
 # =============================================================================
 # PROCESSING
@@ -78,25 +78,36 @@ MAX_SCATTER_POINTS = 5000
 SCATTER_METHOD = "auto"  # "scatter", "hexbin", "auto"
 RASTERIZE_SCATTER = True  # Rasterize points in PDFs for reduced file size
 
+# Post vs Reshare scatter point sizing (based on mean actions per time unit)
+SCATTER_POINT_SIZE_MIN = 10  # Size for least active users
+SCATTER_POINT_SIZE_MAX = 200  # Size for most active users
+SCATTER_POINT_ALPHA = 0.5  # Point transparency
+SCATTER_CLIP_PERCENTILE = 99.9  # Clip axes at this percentile (None = no clip)
+SCATTER_SHOW_SIZE_LEGEND = True  # Show legend explaining point sizes
+
 # Style
 CONFIDENCE_ALPHA = 0.25  # Confidence interval band transparency
 GRID_ALPHA = 0.3
 
 # Logarithmic scale for Y-axis in distribution plots
-USE_LOG_SCALE_USER_ACTIVITY = True   # For user_activity_distribution (default: enabled)
-USE_LOG_SCALE_TOTAL_ACTIVITY = False  # For total_activity_distribution (default: disabled)
+USE_LOG_SCALE_USER_ACTIVITY = True  # For user_activity_distribution (default: enabled)
+USE_LOG_SCALE_TOTAL_ACTIVITY = (
+    False  # For total_activity_distribution (default: disabled)
+)
 
 # =============================================================================
 # PLOTS TO GENERATE
 # =============================================================================
 # Set to True to enable, False to disable
 PLOTS = {
-    "temporal_comparison": True,           # Temporal evolution with CI (DEFAULT)
-    "user_activity_distribution": True,    # User activity distribution (4 panels)
-    "total_activity_distribution": True,   # Total activity distribution (4 panels)
-    "inter_event_time": False,             # Inter-event time distribution
-    "response_time_boxplot": False,        # Response time boxplot
-    "quality_kde": False,                  # Quality/extra feature KDE
+    "temporal_comparison": True,  # Temporal evolution with CI (DEFAULT)
+    "user_activity_distribution": True,  # User activity distribution (4 panels)
+    "total_activity_distribution": True,  # Total activity distribution (4 panels)
+    "action_type_fractions": True,  # Post vs reshare fractions bar plot
+    "post_vs_reshare_scatter": True,  # User mean posts vs reshares scatter
+    "inter_event_time": False,  # Inter-event time distribution
+    "response_time_boxplot": False,  # Response time boxplot
+    "quality_kde": False,  # Quality/extra feature KDE
 }
 
 # =============================================================================

@@ -10,6 +10,8 @@ from .distributions import (
     plot_inter_event_time,
     plot_response_time_boxplot,
     plot_quality_kde,
+    plot_action_type_fractions,
+    plot_post_vs_reshare_scatter,
 )
 
 __all__ = [
@@ -24,4 +26,6 @@ __all__ = [
     "plot_inter_event_time",
     "plot_response_time_boxplot",
     "plot_quality_kde",
+    "plot_action_type_fractions",
+    "plot_post_vs_reshare_scatter",
 ]

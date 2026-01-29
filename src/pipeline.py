@@ -28,6 +28,8 @@ from .visualization import (
     plot_quality_kde,
     plot_user_activity_distribution,
     plot_total_activity_distribution,
+    plot_action_type_fractions,
+    plot_post_vs_reshare_scatter,
 )
 from .export import generate_latex_table, export_metrics_json
 
@@ -37,16 +39,18 @@ logger = logging.getLogger(__name__)
 def list_plots() -> None:
     """Print available plot types."""
     print("\nAvailable plots:")
-    print("  temporal        - Temporal activity comparison with CI")
-    print("  user_activity   - User activity distribution (4 panels)")
-    print("  total_activity  - Total activity distribution (4 panels)")
-    print("  iet             - Inter-event time distribution")
-    print("  response_time   - Response time boxplot")
-    print("  quality         - Quality/extra feature KDE")
+    print("  temporal           - Temporal activity comparison with CI")
+    print("  user_activity      - User activity distribution (4 panels)")
+    print("  total_activity     - Total activity distribution (4 panels)")
+    print("  action_fractions   - Post vs reshare fractions bar plot")
+    print("  post_reshare       - User mean posts vs reshares scatter")
+    print("  iet                - Inter-event time distribution")
+    print("  response_time      - Response time boxplot")
+    print("  quality            - Quality/extra feature KDE")
     print("\nDeprecated (kept for compatibility):")
-    print("  activity_cdf    - [Use user_activity instead]")
-    print("  cascade         - [Removed from analysis]")
-    print("\nUse: python analyze.py --plots temporal user_activity total_activity")
+    print("  activity_cdf       - [Use user_activity instead]")
+    print("  cascade            - [Removed from analysis]")
+    print("\nUse: python analyze.py --plots temporal user_activity action_fractions")
 
 
 def run_conversion(
@@ -169,6 +173,7 @@ def run_validation(
         invalidate_cache_for_simulations(config.cache_dir, affected_sims)
 
     sim_metrics_agg: Dict[str, Dict[str, List[Any]]] = {}
+    sim_metrics_runs: Dict[str, List[Dict[str, Any]]] = {}  # Per-run metrics for scatter plots
     sim_summaries: Dict[str, Dict[str, Dict[str, float]]] = {}
 
     simulations = discover_simulations(
@@ -212,6 +217,9 @@ def run_validation(
                 logger.error(f"    {run_name}: FAILED - {e}")
 
         if runs_metrics:
+            # Save per-run metrics for scatter plots
+            sim_metrics_runs[sim_name] = runs_metrics
+
             # Aggregate metrics
             aggregated = aggregate_simulation_metrics(runs_metrics)
             sim_metrics_agg[sim_name] = aggregated
@@ -241,6 +249,8 @@ def run_validation(
             "temporal": "temporal_comparison",
             "user_activity": "user_activity_distribution",
             "total_activity": "total_activity_distribution",
+            "action_fractions": "action_type_fractions",
+            "post_reshare": "post_vs_reshare_scatter",
             "activity_cdf": "activity_cdf",
             "cdf": "activity_cdf",
             "cascade": "cascade_distribution",
@@ -317,6 +327,42 @@ def run_validation(
             **plot_kwargs,
             output_format=config.format_distribution,
         )
+
+    # New per-simulation plots
+    if plots_to_generate.get("action_type_fractions"):
+        for sim_name in sim_metrics_runs:
+            plot_action_type_fractions(
+                real_metrics=real_metrics,
+                sim_metrics=sim_metrics_runs,
+                sim_name=sim_name,
+                output_dir=config.figures_dir,
+                figure_size=config.figure_size,
+                color_real=config.color_real,
+                color_sim=config.color_palette[0] if config.color_palette else "#0077BB",
+                grid_alpha=config.grid_alpha,
+                output_format=config.format_distribution,
+            )
+
+    if plots_to_generate.get("post_vs_reshare_scatter"):
+        for sim_name in sim_metrics_runs:
+            plot_post_vs_reshare_scatter(
+                real_metrics=real_metrics,
+                sim_metrics=sim_metrics_runs,
+                sim_name=sim_name,
+                output_dir=config.figures_dir,
+                figure_size=config.figure_size_wide,
+                color_real=config.color_real,
+                color_sim=config.color_palette[0] if config.color_palette else "#0077BB",
+                grid_alpha=config.grid_alpha,
+                max_points=config.max_scatter_points,
+                output_format=config.format_scatter,
+                point_alpha=config.scatter_point_alpha,
+                point_size_min=config.scatter_point_size_min,
+                point_size_max=config.scatter_point_size_max,
+                time_binning=config.time_binning,
+                clip_percentile=config.scatter_clip_percentile,
+                show_size_legend=config.scatter_show_size_legend,
+            )
 
     # =========================================================================
     # 4. GENERATE TABLES
