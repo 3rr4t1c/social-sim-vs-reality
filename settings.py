@@ -84,6 +84,7 @@ SCATTER_POINT_SIZE_MAX = 200  # Size for most active users
 SCATTER_POINT_ALPHA = 0.5  # Point transparency
 SCATTER_CLIP_PERCENTILE = 99.9  # Clip axes at this percentile (None = no clip)
 SCATTER_SHOW_SIZE_LEGEND = True  # Show legend explaining point sizes
+SCATTER_ACTIVE_ONLY = True  # If True, mean is computed only on active days (not influenced by dataset duration)
 
 # Style
 CONFIDENCE_ALPHA = 0.25  # Confidence interval band transparency

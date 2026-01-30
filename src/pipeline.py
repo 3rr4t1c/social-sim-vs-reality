@@ -140,6 +140,7 @@ def run_validation(
             analyze_extra=config.analyze_extra_features,
             include_orphaned=config.include_orphaned_users,
             exclude_partial_days=config.exclude_partial_days,
+            scatter_active_only=config.scatter_active_only,
         )
 
         # Save metrics
@@ -210,6 +211,7 @@ def run_validation(
                     analyze_extra=config.analyze_extra_features,
                     include_orphaned=config.include_orphaned_users,
                     exclude_partial_days=config.exclude_partial_days,
+                    scatter_active_only=config.scatter_active_only,
                 )
                 runs_metrics.append(run_metrics)
                 logger.info(f"    {run_name}: OK")

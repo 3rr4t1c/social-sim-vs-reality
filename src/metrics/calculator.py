@@ -57,6 +57,7 @@ def calculate_metrics(
     analyze_extra: bool = True,
     include_orphaned: bool = False,
     exclude_partial_days: bool = False,
+    scatter_active_only: bool = True,
 ) -> Dict[str, Any]:
     """
     Calculate validation metrics for a dataset.
@@ -271,7 +272,9 @@ def calculate_metrics(
     # =========================================================================
     # USER POST VS RESHARE MEANS (for scatter plot)
     # =========================================================================
-    user_post_reshare = calculate_user_post_reshare_means(df, window_size=time_binning)
+    user_post_reshare = calculate_user_post_reshare_means(
+        df, window_size=time_binning, active_only=scatter_active_only
+    )
     metrics["user_post_reshare_means"] = user_post_reshare
 
     # =========================================================================

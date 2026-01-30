@@ -488,21 +488,23 @@ def calculate_action_type_fractions(df: pd.DataFrame) -> Dict[str, float]:
 def calculate_user_post_reshare_means(
     df: pd.DataFrame,
     window_size: str = "1D",
+    active_only: bool = True,
 ) -> pd.DataFrame:
     """
     Calculate mean posts and reshares per time unit for each user.
 
-    Uses the temporal activity matrix to properly compute means from the first
-    non-zero action for each user.
+    Uses the temporal activity matrix to compute means.
 
     For each user, computes:
-    - mean_posts: average posts per time unit (from first action to end)
-    - mean_reshares: average reshares per time unit (from first action to end)
+    - mean_posts: average posts per time unit
+    - mean_reshares: average reshares per time unit
     - mean_total_actions: average total actions per time unit (mean_posts + mean_reshares)
 
     Args:
         df: DataFrame with timestamp, author_id, action_type columns
         window_size: Temporal window size (default: daily)
+        active_only: If True, mean computed only on timesteps with total activity > 0.
+                     If False, mean computed from first action to end of dataset.
 
     Returns:
         DataFrame with columns [user_id, mean_posts, mean_reshares, mean_total_actions]
@@ -535,31 +537,34 @@ def calculate_user_post_reshare_means(
     for user_id in all_activity_matrix.columns:
         user_total_activity = all_activity_matrix[user_id]
 
-        # Find first non-zero index (first action)
+        # Find timesteps with activity
         non_zero_mask = user_total_activity > 0
         if not non_zero_mask.any():
             continue
 
         first_action_idx = user_total_activity[non_zero_mask].index[0]
 
-        # Count timesteps from first action to end
-        active_period = user_total_activity.loc[first_action_idx:]
-        n_timesteps = len(active_period)
+        # Count timesteps based on mode
+        if active_only:
+            # Count only timesteps with activity > 0
+            n_timesteps = non_zero_mask.sum()
+        else:
+            # Count all timesteps from first action to end
+            active_period = user_total_activity.loc[first_action_idx:]
+            n_timesteps = len(active_period)
 
         if n_timesteps == 0:
             n_timesteps = 1
 
-        # Get posts in active period
+        # Get total posts for user
         if not posts_matrix.empty and user_id in posts_matrix.columns:
-            user_posts = posts_matrix[user_id].loc[first_action_idx:] if first_action_idx in posts_matrix.index else posts_matrix[user_id]
-            total_posts = user_posts.sum()
+            total_posts = posts_matrix[user_id].sum()
         else:
             total_posts = 0
 
-        # Get reshares in active period
+        # Get total reshares for user
         if not reshares_matrix.empty and user_id in reshares_matrix.columns:
-            user_reshares = reshares_matrix[user_id].loc[first_action_idx:] if first_action_idx in reshares_matrix.index else reshares_matrix[user_id]
-            total_reshares = user_reshares.sum()
+            total_reshares = reshares_matrix[user_id].sum()
         else:
             total_reshares = 0
 

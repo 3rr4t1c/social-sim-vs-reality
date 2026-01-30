@@ -79,6 +79,7 @@ class Config:
     scatter_point_alpha: float
     scatter_clip_percentile: int  # Clip axes at this percentile (None = no clip)
     scatter_show_size_legend: bool  # Show legend explaining point sizes
+    scatter_active_only: bool  # If True, mean computed only on active days
     confidence_alpha: float
     grid_alpha: float
     use_log_scale_user_activity: bool
@@ -178,6 +179,7 @@ def load_config() -> Config:
         scatter_point_alpha=getattr(settings, "SCATTER_POINT_ALPHA", 0.5),
         scatter_clip_percentile=getattr(settings, "SCATTER_CLIP_PERCENTILE", 99),
         scatter_show_size_legend=getattr(settings, "SCATTER_SHOW_SIZE_LEGEND", True),
+        scatter_active_only=getattr(settings, "SCATTER_ACTIVE_ONLY", True),
         confidence_alpha=settings.CONFIDENCE_ALPHA,
         grid_alpha=settings.GRID_ALPHA,
         use_log_scale_user_activity=getattr(settings, "USE_LOG_SCALE_USER_ACTIVITY", True),
