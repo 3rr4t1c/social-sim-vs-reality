@@ -359,11 +359,8 @@ def run_validation(
                 max_points=config.max_scatter_points,
                 output_format=config.format_scatter,
                 point_alpha=config.scatter_point_alpha,
-                point_size_min=config.scatter_point_size_min,
-                point_size_max=config.scatter_point_size_max,
                 time_binning=config.time_binning,
                 clip_percentile=config.scatter_clip_percentile,
-                show_size_legend=config.scatter_show_size_legend,
             )
 
     # =========================================================================

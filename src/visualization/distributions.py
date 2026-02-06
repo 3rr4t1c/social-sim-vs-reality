@@ -830,17 +830,15 @@ def plot_post_vs_reshare_scatter(
     max_points: int = 5000,
     output_format: str = "png",
     point_alpha: float = 0.5,
-    point_size_min: int = 10,
-    point_size_max: int = 200,
+    point_size: int = 20,
     time_binning: str = "D",
     clip_percentile: Optional[int] = 99,
-    show_size_legend: bool = True,
 ) -> Optional[Path]:
     """
     Plot scatter of mean posts vs mean reshares per user per time unit.
 
     Creates two side-by-side panels: Real data | Simulated data.
-    Each point represents one user. Point size reflects total activity.
+    Each point represents one user.
 
     Args:
         real_metrics: Metrics dictionary for real data
@@ -854,11 +852,9 @@ def plot_post_vs_reshare_scatter(
         max_points: Maximum points to display (samples if exceeded)
         output_format: Output format ("pdf", "png")
         point_alpha: Point transparency
-        point_size_min: Minimum point size (for least active users)
-        point_size_max: Maximum point size (for most active users)
+        point_size: Point size (uniform for all points)
         time_binning: Time binning setting for axis labels
         clip_percentile: Percentile to clip axes at (None = no clipping)
-        show_size_legend: Show legend explaining point sizes
 
     Returns:
         Path to saved figure, or None if no data
@@ -898,12 +894,7 @@ def plot_post_vs_reshare_scatter(
 
     # Concatenate all runs and group by user_id to average
     sim_combined = pd.concat(sim_dfs, ignore_index=True)
-
-    # Check if mean_total_actions column exists
     agg_cols = {"mean_posts": "mean", "mean_reshares": "mean"}
-    if "mean_total_actions" in sim_combined.columns:
-        agg_cols["mean_total_actions"] = "mean"
-
     sim_df = sim_combined.groupby("user_id").agg(agg_cols).reset_index()
 
     # Sample if too many points
@@ -912,47 +903,13 @@ def plot_post_vs_reshare_scatter(
     if len(sim_df) > max_points:
         sim_df = sim_df.sample(n=max_points, random_state=42)
 
-    # Calculate point sizes based on mean_total_actions (using percentile for max)
-    def calculate_sizes(df, size_min, size_max, percentile_max=None):
-        if "mean_total_actions" not in df.columns or df["mean_total_actions"].max() == 0:
-            return np.full(len(df), (size_min + size_max) / 2), 0, 0
-
-        activity = df["mean_total_actions"].values
-        min_act = activity.min()
-        abs_max = activity.max()
-
-        # Use percentile max if provided, otherwise absolute max
-        max_act = percentile_max if percentile_max is not None else abs_max
-
-        if max_act == min_act:
-            return np.full(len(df), (size_min + size_max) / 2), min_act, abs_max
-
-        # Normalize to [0, 1] then scale to [size_min, size_max]
-        # Values above percentile_max get capped to max size
-        normalized = np.clip((activity - min_act) / (max_act - min_act), 0, 1)
-        return size_min + normalized * (size_max - size_min), max_act, abs_max
-
-    # Calculate percentile-based max for mean_total_actions
-    if clip_percentile is not None and "mean_total_actions" in real_df.columns:
-        all_total_actions = np.concatenate([
-            real_df["mean_total_actions"].values,
-            sim_df["mean_total_actions"].values if "mean_total_actions" in sim_df.columns else []
-        ])
-        size_percentile_max = np.percentile(all_total_actions, clip_percentile)
-    else:
-        size_percentile_max = None
-
-    real_sizes, real_size_pct, real_size_abs = calculate_sizes(real_df, point_size_min, point_size_max, size_percentile_max)
-    sim_sizes, sim_size_pct, sim_size_abs = calculate_sizes(sim_df, point_size_min, point_size_max, size_percentile_max)
-
     # Calculate axis limits
     if clip_percentile is not None:
-        # Combine all data to compute consistent percentile
         all_posts = np.concatenate([real_df["mean_posts"].values, sim_df["mean_posts"].values])
         all_reshares = np.concatenate([real_df["mean_reshares"].values, sim_df["mean_reshares"].values])
         max_post = np.percentile(all_posts, clip_percentile)
         max_reshare = np.percentile(all_reshares, clip_percentile)
-        max_val = max(max_post, max_reshare) * 1.05  # small padding
+        max_val = max(max_post, max_reshare) * 1.05
 
         # Count points outside visible range
         real_outside = ((real_df["mean_posts"] > max_val) | (real_df["mean_reshares"] > max_val)).sum()
@@ -964,13 +921,19 @@ def plot_post_vs_reshare_scatter(
         real_outside = 0
         sim_outside = 0
 
+    # Calculate actual max values (before clipping)
+    real_max_posts = real_df["mean_posts"].max()
+    real_max_reshares = real_df["mean_reshares"].max()
+    sim_max_posts = sim_df["mean_posts"].max()
+    sim_max_reshares = sim_df["mean_reshares"].max()
+
     # Create plot with two panels
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figure_size)
 
     # Real data panel
     ax1.scatter(real_df["mean_posts"], real_df["mean_reshares"],
-                alpha=point_alpha, s=real_sizes, color=color_real, edgecolors="none")
-    ax1.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)  # y=x line without legend
+                alpha=point_alpha, s=point_size, color=color_real, edgecolors="none")
+    ax1.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)
     ax1.set_xlabel(f"Mean posts per {time_unit}", fontsize=11)
     ax1.set_ylabel(f"Mean reshares per {time_unit}", fontsize=11)
     ax1.set_title("Real Data", fontsize=12, fontweight="bold")
@@ -979,20 +942,37 @@ def plot_post_vs_reshare_scatter(
     ax1.grid(alpha=grid_alpha)
     ax1.set_aspect("equal", adjustable="box")
 
-    # Add annotation for points outside visible range
-    if real_outside > 0:
-        ax1.annotate(
-            f"{real_outside} point{'s' if real_outside > 1 else ''} beyond axes",
-            xy=(0.98, 0.02), xycoords="axes fraction",
-            ha="right", va="bottom", fontsize=8,
-            color="gray", style="italic"
-        )
+    # Stats box for real data
+    real_stats = f"N: {len(real_df):,} users"
+    if clip_percentile is not None and real_outside > 0:
+        real_stats += f"\nClipped: {real_outside} (p{clip_percentile})"
+    # Calculate actual visible max (max of points within axis limits)
+    real_visible = real_df[(real_df["mean_posts"] <= max_val) & (real_df["mean_reshares"] <= max_val)]
+    real_vis_posts = real_visible["mean_posts"].max() if not real_visible.empty else real_max_posts
+    real_vis_reshares = real_visible["mean_reshares"].max() if not real_visible.empty else real_max_reshares
+    # Show visible max and absolute max if different
+    if real_max_posts > real_vis_posts * 1.01:  # More than 1% difference
+        real_stats += f"\nMax posts/{time_unit}: {real_vis_posts:.2f} (abs: {real_max_posts:.2f})"
+    else:
+        real_stats += f"\nMax posts/{time_unit}: {real_max_posts:.2f}"
+    if real_max_reshares > real_vis_reshares * 1.01:  # More than 1% difference
+        real_stats += f"\nMax reshares/{time_unit}: {real_vis_reshares:.2f} (abs: {real_max_reshares:.2f})"
+    else:
+        real_stats += f"\nMax reshares/{time_unit}: {real_max_reshares:.2f}"
+    ax1.text(
+        0.97, 0.97, real_stats,
+        transform=ax1.transAxes,
+        verticalalignment="top",
+        horizontalalignment="right",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
 
     # Simulation panel
     display_name = sim_name.replace("_simulation", "").replace("_", " ")
     ax2.scatter(sim_df["mean_posts"], sim_df["mean_reshares"],
-                alpha=point_alpha, s=sim_sizes, color=color_sim, edgecolors="none")
-    ax2.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)  # y=x line without legend
+                alpha=point_alpha, s=point_size, color=color_sim, edgecolors="none")
+    ax2.plot([0, max_val], [0, max_val], "k--", alpha=0.3, linewidth=1)
     ax2.set_xlabel(f"Mean posts per {time_unit}", fontsize=11)
     ax2.set_ylabel(f"Mean reshares per {time_unit}", fontsize=11)
     ax2.set_title(f"Simulated: {display_name} (n={len(sim_runs)} runs)", fontsize=12, fontweight="bold")
@@ -1001,47 +981,31 @@ def plot_post_vs_reshare_scatter(
     ax2.grid(alpha=grid_alpha)
     ax2.set_aspect("equal", adjustable="box")
 
-    # Add annotation for points outside visible range
-    if sim_outside > 0:
-        ax2.annotate(
-            f"{sim_outside} point{'s' if sim_outside > 1 else ''} beyond axes",
-            xy=(0.98, 0.02), xycoords="axes fraction",
-            ha="right", va="bottom", fontsize=8,
-            color="gray", style="italic"
-        )
-
-    # Add size legend if requested and mean_total_actions is available
-    if show_size_legend and "mean_total_actions" in real_df.columns:
-        from matplotlib.lines import Line2D
-
-        # Format high label: show percentile value and absolute max if different
-        def format_high_label(pct_val, abs_val):
-            if abs_val > pct_val * 1.01:  # More than 1% difference
-                return f'High ({pct_val:.2f}, max: {abs_val:.2f})'
-            return f'High ({pct_val:.2f})'
-
-        # Real data legend (use color_real for markers)
-        real_min = real_df["mean_total_actions"].min()
-        real_legend_handles = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor=color_real,
-                   markersize=np.sqrt(point_size_min), label=f'Low ({real_min:.2f})'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor=color_real,
-                   markersize=np.sqrt(point_size_max), label=format_high_label(real_size_pct, real_size_abs)),
-        ]
-        ax1.legend(handles=real_legend_handles, loc="upper right", fontsize=8,
-                   title=f"Mean actions/{time_unit}", title_fontsize=8, framealpha=0.9)
-
-        # Simulation data legend (use color_sim for markers)
-        if "mean_total_actions" in sim_df.columns:
-            sim_min = sim_df["mean_total_actions"].min()
-            sim_legend_handles = [
-                Line2D([0], [0], marker='o', color='w', markerfacecolor=color_sim,
-                       markersize=np.sqrt(point_size_min), label=f'Low ({sim_min:.2f})'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor=color_sim,
-                       markersize=np.sqrt(point_size_max), label=format_high_label(sim_size_pct, sim_size_abs)),
-            ]
-            ax2.legend(handles=sim_legend_handles, loc="upper right", fontsize=8,
-                       title=f"Mean actions/{time_unit}", title_fontsize=8, framealpha=0.9)
+    # Stats box for simulation data
+    sim_stats = f"N: {len(sim_df):,} users"
+    if clip_percentile is not None and sim_outside > 0:
+        sim_stats += f"\nClipped: {sim_outside} (p{clip_percentile})"
+    # Calculate actual visible max (max of points within axis limits)
+    sim_visible = sim_df[(sim_df["mean_posts"] <= max_val) & (sim_df["mean_reshares"] <= max_val)]
+    sim_vis_posts = sim_visible["mean_posts"].max() if not sim_visible.empty else sim_max_posts
+    sim_vis_reshares = sim_visible["mean_reshares"].max() if not sim_visible.empty else sim_max_reshares
+    # Show visible max and absolute max if different
+    if sim_max_posts > sim_vis_posts * 1.01:  # More than 1% difference
+        sim_stats += f"\nMax posts/{time_unit}: {sim_vis_posts:.2f} (abs: {sim_max_posts:.2f})"
+    else:
+        sim_stats += f"\nMax posts/{time_unit}: {sim_max_posts:.2f}"
+    if sim_max_reshares > sim_vis_reshares * 1.01:  # More than 1% difference
+        sim_stats += f"\nMax reshares/{time_unit}: {sim_vis_reshares:.2f} (abs: {sim_max_reshares:.2f})"
+    else:
+        sim_stats += f"\nMax reshares/{time_unit}: {sim_max_reshares:.2f}"
+    ax2.text(
+        0.97, 0.97, sim_stats,
+        transform=ax2.transAxes,
+        verticalalignment="top",
+        horizontalalignment="right",
+        fontsize=9,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
 
     plt.tight_layout()
 
